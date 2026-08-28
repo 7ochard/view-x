@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "TweetDeckX - Multi-Column X Client",
-  "version": "0.2.1",
-  "description": "TweetDeck-style multi-column interface for X/Twitter using your logged-in session.",
+  "name": "View-X — Browser Workspace",
+  "version": "0.3.0",
+  "description": "A personal horizontal X workspace using your existing logged-in session.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -28,12 +28,15 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; font-src 'self' https://fonts.gstatic.com;"
+  },
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
     },
-    "default_title": "Open TweetDeckX"
+    "default_title": "Open View-X"
   },
   "declarative_net_request": {
     "rule_resources": [
@@ -62,7 +65,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["deck.html", "deck.css", "deck.js", "stub.json"],
+      "resources": ["deck.html", "deck.css", "deck.js", "auto-animate.mjs", "workspace-storage.js", "x-adapter.js", "column.js", "stub.json"],
       "matches": ["<all_urls>"]
     }
   ]

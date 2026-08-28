@@ -158,4 +158,11 @@
   document.addEventListener('scroll', notifyActivity, { passive: true, capture: true });
   document.addEventListener('click', notifyActivity, { capture: true });
   document.addEventListener('keydown', notifyActivity, { capture: true });
+
+  // Selection in View-X is intentional: only a trusted click inside this X frame
+  // is allowed to select its corresponding column in the parent deck.
+  document.addEventListener('click', function (event) {
+    if (!event.isTrusted) return;
+    window.postMessage({ type: 'tweetdeckx-column-click' }, '*');
+  }, { capture: true });
 })();

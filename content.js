@@ -30,6 +30,8 @@
   // -------------------------------------------------------
 
   let isTweetDeckX = false;
+  let reportedAccountHandle = null;
+  let reportedAvatarUrl = null;
 
   window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'tweetdeckx-init') {
@@ -37,6 +39,8 @@
       applyCompactStyles();
       applyHideAds(e.data.hideAds);
       applyHideColumnHeader(e.data.hideColumnHeader);
+      applyTimelinePreset(e.data.timelinePreset);
+      reportAccountHandleWhenReady();
     }
     if (e.data && e.data.type === 'tweetdeckx-set-column-width') {
       document.documentElement.style.setProperty('--tweetdeckx-col-width', e.data.width + 'px');
@@ -52,6 +56,11 @@
     }
     // Forward user activity (scroll/click/keydown) so deck keeps the column active
     if (e.data && e.data.type === 'tweetdeckx-user-activity') {
+      try { window.parent.postMessage(e.data, '*'); } catch (err) {}
+    }
+    // Forward trusted X-frame clicks separately from background activity. The deck
+    // uses this message exclusively for the left column-selector state.
+    if (e.data && e.data.type === 'tweetdeckx-column-click') {
       try { window.parent.postMessage(e.data, '*'); } catch (err) {}
     }
     // Forward iframe URL changes to the parent deck
@@ -83,10 +92,12 @@
   }, 500);
 
   function applyCompactStyles() {
-    if (document.getElementById('tweetdeckx-compact-styles')) return;
+    if (document.getElementById('viewx-compact-styles-v8')) return;
+
+    clearLegacyCenterOffsets();
 
     const style = document.createElement('style');
-    style.id = 'tweetdeckx-compact-styles';
+    style.id = 'viewx-compact-styles-v8';
     style.textContent = `
       /* Hide left navigation sidebar */
       header[role="banner"],
@@ -95,26 +106,44 @@
         display: none !important;
       }
 
-      main {
-        margin-left: 0 !important;
-      }
-
       [data-testid="sidebarColumn"] {
         display: none !important;
       }
 
+      /* Let the X timeline use the full Deck slot. This targets only the
+         timeline's ancestor chain and never changes its horizontal position. */
+      main,
+      main :has([data-testid="primaryColumn"]),
       [data-testid="primaryColumn"] {
-        max-width: 100% !important;
         width: 100% !important;
-        border-right: none !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
       }
 
-      main > div > div > div {
-        max-width: 100% !important;
+      [data-testid="primaryColumn"] {
+        flex: 1 1 auto !important;
+        margin: 0 !important;
+        border-inline: none !important;
       }
 
-      body > div#react-root > div > div {
-        max-width: 100% !important;
+      /* A two-column Deck gives each iframe a wide reading surface. Keep the
+         timeline tabs on the same central rail as the feed rather than
+         spreading them from edge to edge. Narrower three-plus-column views
+         retain X's full-width tab navigation. */
+      @media (min-width: 880px) {
+        [data-testid="primaryColumn"] [role="tablist"] {
+          width: min(100%, 720px) !important;
+          max-width: 720px !important;
+          margin-inline: auto !important;
+        }
+
+        [data-testid="primaryColumn"] form:has([data-testid="tweetTextarea_0"]) {
+          width: min(100%, 720px) !important;
+          max-width: 720px !important;
+          margin-inline: auto !important;
+          box-sizing: border-box !important;
+        }
       }
 
       [data-testid="BottomBar"] {
@@ -143,8 +172,10 @@
       #react-root,
       #react-root > div,
       #react-root > div > div {
+        width: 100% !important;
         max-width: 100vw !important;
         min-width: 0 !important;
+        box-sizing: border-box !important;
       }
 
       [data-testid="sheetDialog"],
@@ -180,14 +211,13 @@
     };
 
     inject();
-
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', inject);
     }
 
     // Re-inject if React overwrites the DOM
     const observer = new MutationObserver(() => {
-      if (!document.getElementById('tweetdeckx-compact-styles')) {
+      if (!document.getElementById('viewx-compact-styles-v8')) {
         inject();
       }
     });
@@ -207,6 +237,16 @@
     try {
       window.parent.postMessage({ type: 'tweetdeckx-compact-ready' }, '*');
     } catch (e) {}
+  }
+
+  function clearLegacyCenterOffsets() {
+    document.querySelectorAll('[data-viewx-centered="true"]').forEach((element) => {
+      element.style.removeProperty('position');
+      element.style.removeProperty('left');
+      element.style.removeProperty('right');
+      element.style.removeProperty('transform');
+      element.removeAttribute('data-viewx-centered');
+    });
   }
 
   function applyHideAds(enabled) {
@@ -254,6 +294,100 @@
     } else if (!enabled && existing) {
       existing.remove();
     }
+  }
+
+  // View-X presets keep the default workspace useful without storing a
+  // language-specific X URL. Following and topic timelines are tabs within
+  // /home, so select them only after X has rendered its timeline tablist.
+  function applyTimelinePreset(preset) {
+    if (!preset || preset === 'likes' || window.location.pathname !== '/home') return;
+    let attempts = 0;
+    const selectPreset = () => {
+      attempts += 1;
+      const tablists = Array.from(document.querySelectorAll('[role="tablist"]'));
+      const tablist = tablists.find((list) => {
+        const text = (list.textContent || '').toLowerCase();
+        return text.includes('for you') || text.includes('following') || text.includes('为你推荐') || text.includes('正在关注');
+      });
+      const tabs = tablist ? Array.from(tablist.querySelectorAll('[role="tab"]')) : [];
+      if (tabs.length) {
+        const label = (tab) => (tab.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        let target = null;
+        if (preset === 'home') {
+          target = tabs.find((tab) => /for you|为你推荐/.test(label(tab)));
+        }
+        if (preset === 'following') {
+          target = tabs.find((tab) => /following|正在关注|关注中/.test(label(tab)));
+        }
+        if (preset.startsWith('topic:')) {
+          const topicIndex = Number(preset.split(':')[1]);
+          const topicTabs = tabs.filter((tab) => !/for you|following|为你推荐|正在关注|关注中/.test(label(tab)));
+          target = topicTabs[topicIndex];
+        }
+        if (target && target.getAttribute('aria-selected') !== 'true') {
+          target.click();
+          return;
+        }
+        if (target) return;
+      }
+      if (attempts < 20) setTimeout(selectPreset, 750);
+    };
+    setTimeout(selectPreset, 250);
+  }
+
+  function publicHandleFromLink(link) {
+    if (!link || !link.href) return null;
+    try {
+      const match = new URL(link.href, window.location.origin).pathname.match(/^\/([A-Za-z0-9_]{1,15})$/);
+      return match ? match[1] : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function findAccountHandle() {
+    const accountSwitcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+    const switcherText = accountSwitcher && [
+      accountSwitcher.innerText,
+      accountSwitcher.getAttribute('aria-label'),
+      accountSwitcher.getAttribute('title'),
+    ].filter(Boolean).join(' ');
+    const switcherMatch = switcherText && switcherText.match(/@([A-Za-z0-9_]{1,15})\b/);
+    if (switcherMatch) return switcherMatch[1];
+
+    return publicHandleFromLink(document.querySelector('a[data-testid="AppTabBar_Profile_Link"]'));
+  }
+
+  function findAccountAvatar() {
+    return document.querySelector(
+      '[data-testid="SideNav_AccountSwitcher_Button"] img[src*="twimg.com"], ' +
+      '[data-testid="AppTabBar_Profile_Link"] img[src*="twimg.com"]'
+    );
+  }
+
+  // Likes require the current account handle. The avatar and public handle
+  // arrive independently: current X layouts expose the account switcher even
+  // when the profile navigation link is not present.
+  function reportAccountHandleWhenReady() {
+    let attempts = 0;
+    const report = () => {
+      attempts += 1;
+      const avatar = findAccountAvatar();
+      const avatarUrl = avatar ? (avatar.currentSrc || avatar.src || '') : '';
+      if (avatarUrl && avatarUrl !== reportedAvatarUrl) {
+        reportedAvatarUrl = avatarUrl;
+        try { window.parent.postMessage({ type: 'tweetdeckx-account-avatar', avatarUrl }, '*'); } catch (error) {}
+      }
+
+      const handle = findAccountHandle();
+      if (handle && handle !== reportedAccountHandle) {
+        reportedAccountHandle = handle;
+        try { window.parent.postMessage({ type: 'tweetdeckx-account-handle', handle, avatarUrl }, '*'); } catch (error) {}
+      }
+
+      if (attempts < 24 && (!reportedAccountHandle || !reportedAvatarUrl)) setTimeout(report, 750);
+    };
+    report();
   }
 
   // -------------------------------------------------------
