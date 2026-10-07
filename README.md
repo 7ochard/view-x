@@ -1,86 +1,53 @@
-# TweetDeckX — Multi-Column X Client
+# View-X · X 多列工作台
 
-> [!WARNING]
-> **Use this at your own risk.** TweetDeckX operates in a gray area of X's Terms of Service. If this project gains traction, X may actively work against it. Your account could be shadowbanned or suspended. I'm doing my best to work around any blockades, but nothing is guaranteed.
+**当前版本：0.3.1。** 基于 TweetDeckX 改造的 Chrome / Chromium 扩展，使用浏览器已有的 X 登录会话，将多个时间线、页面和点赞列表放到横向工作台中。
 
-A free, open-source Chrome extension that brings back the TweetDeck-style multi-column layout for X (formerly Twitter). TweetDeckX uses your existing logged-in X session — no extra authentication, no API keys, no third-party servers.
+## 下载与安装
 
-![TweetDeckX Preview](preview.png)
+1. 从 [v0.3.1 Release](https://github.com/7ochard/view-x/releases/tag/v0.3.1) 下载 `View-X-v0.3.1.zip` 并完整解压。
+2. 打开 `chrome://extensions`，启用右上角“开发者模式”。
+3. 点击“加载已解压的扩展程序”，选择直接包含 `manifest.json` 的 `View-X-v0.3.1` 文件夹。
+4. 在同一个浏览器登录 https://x.com/，点击工具栏里的 View-X 图标。
 
-## Features
+不需要 Node.js、npm 或额外 API Key。此发布提供手动安装包，尚未通过 Chrome Web Store 分发。
 
-- **Multi-column layout** — view Home, Explore, Notifications, Messages, Bookmarks, Search, User profiles, Lists, and Likes side by side
-- **Custom columns** — add any X.com URL as a column
-- **Adjustable column width** — resize columns to your preference
-- **Dark/light theme** — follows your preference
-- **Drag-and-drop reordering** — organize columns however you like
-- **Works with any X account** — uses your logged-in browser session, so it works with any account without additional setup
-- **No data collection** — everything runs locally in your browser
+## 当前能力
 
-## Installation
+- 默认五栏：为你推荐、正在关注、第一个 timeline、Likes、探索；timeline 和 Likes 的显示依赖 X 页面及当前登录账号。
+- 添加 X 链接、调整列宽、拖拽排序、多列或单列浏览。
+- 展开当前列、原位切换、按 Escape 收起。
+- 隐藏列延迟创建，切换时保留已加载页面。
+- 可切换纵向同步滚动；已有自定义列和主动清空的工作台保留。
+- 浏览器本地保存工作台设置。
 
-1. Clone or download this repository
-2. Open `chrome://extensions` in Chrome (or any Chromium-based browser)
-3. Enable **Developer mode** (top-right toggle)
-4. Click **Load unpacked** and select the project folder
-5. Click the TweetDeckX icon in the toolbar to open the multi-column view
+## 升级
 
-## Updating
+关闭 View-X 工作台标签页，把新版解压到固定目录，在扩展管理页对原扩展点击“重新加载”，再打开工作台。尽量沿用原安装路径，避免浏览器识别为另一份扩展。
 
-1. `git pull` (or download the latest release on the same folder)
-2. Open `chrome://extensions`
-3. Click the reload button on the TweetDeckX extension
-4. Close and reopen the deck tab
+## 权限与网络
 
-## Usage
+| 权限 | 用途 |
+| --- | --- |
+| storage | 在浏览器中保存工作台与设置 |
+| cookies | 读取 X 会话相关 cookie，使嵌入页面能使用现有登录状态 |
+| declarativeNetRequest / declarativeNetRequestFeedback | 调整 X 页面嵌入所需的响应头、请求头规则及诊断 |
+| webRequest | 观察 X 的限流响应 |
+| X / Twitter / twimg / api.x.com 主机权限 | 页面加载、媒体资源和 X 会话适配 |
+| api.github.com 主机权限 | 检查本仓库的最新 Release，不执行自动安装 |
 
-1. Make sure you are logged in to [x.com](https://x.com) in the same browser
-2. Click the TweetDeckX extension icon to open the deck
-3. Click the **+** button in the sidebar to add columns
-4. Drag columns in the sidebar to reorder them
+扩展运行时会访问 X、其媒体服务与 GitHub 更新接口。发布包不包含用户登录会话、cookie、浏览记录或私有凭据。
 
-## Known Issues
+## 验证与限制
 
-- X likes to rate limit the shit out of its normal users. Since we're using the simplest form of X timeline we can sometimes hit those rate limits. I'm trying to mitigate this as best as I can but you should be aware if you are a power user with a shit ton of columns.
+运行 `npm test` 执行工作台行为测试，无需安装依赖。发布验证范围见 `RELEASE_VALIDATION.md`。
 
+- X 页面结构、登录行为、访问限制和限流变化可能导致部分列不可用。
+- 点赞列表、个人 timeline 和登录后的内容需要在你自己的浏览器中验收。
+- 此扩展沿用上游的嵌入与请求头调整方式；请了解并遵守 X 的适用条款。
+- 不承诺全浏览器兼容或持续可用。
 
-## Permissions
+版本变化见 [CHANGELOG](CHANGELOG.md)。
 
-TweetDeckX requests only the permissions it needs to function. Here's exactly what each one does and why:
+## 来源与许可
 
-| Permission | Why we need it |
-|---|---|
-| `storage` | Save your pages, columns, and settings locally in your browser. Nothing is sent anywhere. |
-| `cookies` | Read your X.com session cookies so the embedded columns can authenticate. Without this, X.com would show "Please log in" in every column. Cookies are only read for `x.com` — never for any other site. |
-| `declarativeNetRequest` | Strip X.com's `X-Frame-Options` and `Content-Security-Policy` headers so X.com pages can load inside iframes. Also spoofs `Sec-Fetch-*` headers so X.com's servers don't block the embedded pages. |
-| `declarativeNetRequestFeedback` | Debug logging for the header rules above — helps diagnose issues when columns fail to load. |
-| `webRequest` | Detect when X.com returns 429 (rate limit) responses so we can pause loading and warn you instead of hammering their servers. Read-only — we never modify or block any requests. |
-| Host permissions (`x.com`, `twitter.com`, `twimg.com`, `api.x.com`) | Required for the above permissions to apply to X.com's domains. Without these, Chrome wouldn't let us read cookies, modify headers, or monitor responses for those sites. |
-
-**What we don't do:** No data collection, no analytics, no external servers, no tracking. Everything runs locally in your browser.
-
-## Reporting Bugs
-
-Found a bug? Please [open an issue](../../issues) on GitHub with:
-
-- A clear description of the problem
-- Steps to reproduce
-- Your browser and OS version
-- Screenshots if applicable
-
-## Contributing
-
-Contributions are welcome! To get started:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b my-feature`)
-3. Make your changes
-4. Test the extension locally by loading the unpacked extension
-5. Commit your changes and push the branch
-6. Open a Pull Request
-
-Please keep PRs focused on a single change and include a clear description of what you changed and why.
-
-## License
-
-This project is licensed under the [ISC License](https://opensource.org/licenses/ISC).
+基于 [ngalatis/TweetDeckX](https://github.com/ngalatis/TweetdeckX) 的既有代码，沿用现有 ISC 声明。AutoAnimate、Remix Icon 和 Emojibase 保留各自许可，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。

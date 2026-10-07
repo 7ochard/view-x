@@ -7,3 +7,7 @@ _metadata/
 !.gitignore
 *.md
 !README.md
+!CHANGELOG.md
+!THIRD_PARTY_NOTICES.md
+!RELEASE_VALIDATION.md
+View-X-v*/

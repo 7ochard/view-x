@@ -12,6 +12,7 @@
   --accent-ink: #0a0a0a;
   --brand: #f2f2f2;
   --brand-ink: #0a0a0a;
+  --logo: #f2f2f2;
   --interaction-hover: color-mix(in srgb, var(--ink) 12%, transparent);
   --danger: #ff7a17;
   --rail-width: 64px;
@@ -29,6 +30,7 @@
   --line-strong: rgba(10, 10, 10, .32);
   --accent: #0a0a0a;
   --accent-ink: #ffffff;
+  --logo: #0a0a0a;
   --danger: #c44b00;
 }
 
@@ -103,7 +105,22 @@ button:disabled { cursor: not-allowed; opacity: .38; }
   color: var(--ink);
 }
 
-.workspace-brand img { display: block; width: 24px; height: 24px; }
+.workspace-brand-mark,
+.add-card-brand {
+  display: block;
+  background: var(--logo);
+  mask: url("View X logo.svg") center / contain no-repeat;
+  -webkit-mask: url("View X logo.svg") center / contain no-repeat;
+  transition: background-color 160ms ease;
+}
+
+.workspace-brand-mark { width: 24px; height: 24px; }
+
+#scroll-sync-button[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--brand-ink);
+}
 
 .column-nav {
   display: flex;
@@ -389,7 +406,6 @@ button:disabled { cursor: not-allowed; opacity: .38; }
   border: 0;
   border-radius: 0;
   background: var(--surface);
-  transition: width 180ms cubic-bezier(.2, .8, .2, 1), flex-basis 180ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .workspace-column.is-dragging { opacity: .45; transform: scale(.985); }
@@ -423,7 +439,6 @@ button:disabled { cursor: not-allowed; opacity: .38; }
   font-family: "Space Grotesk", "Segoe UI Variable", "Helvetica Neue", sans-serif;
   font-size: 12px;
   letter-spacing: .05em;
-  transition: width 180ms cubic-bezier(.2, .8, .2, 1), flex-basis 180ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .workspace-add-card:not([hidden]) {
@@ -536,17 +551,21 @@ body.workspace-has-expanded::before {
   pointer-events: none;
 }
 
-.workspace-column.is-expanded {
+body.workspace-has-expanded .workspace-bar { z-index: 21; }
+
+.workspace-column.is-expanded { overflow: visible; }
+
+.workspace-column.is-expanded .column-frame-surface {
   position: fixed;
   z-index: 20;
   top: 16px;
   bottom: 16px;
-  left: 50%;
-  width: min(1280px, calc(100vw - 32px)) !important;
+  left: calc(50% + var(--rail-width) / 2);
+  width: min(1280px, calc(100vw - var(--rail-width) - 32px));
   height: auto;
+  overflow: hidden;
   transform: translateX(-50%);
   border: 1px solid var(--line-strong);
-  border-color: var(--line-strong);
   border-radius: 8px;
 }
 

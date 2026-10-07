@@ -11,7 +11,7 @@
   <div class="workspace-shell">
     <aside class="workspace-bar" aria-label="Workspace actions">
       <div class="workspace-brand" aria-label="View-X">
-        <img src="View X logo.svg" alt="">
+        <span class="workspace-brand-mark" aria-hidden="true"></span>
       </div>
       <nav id="column-nav" class="column-nav" aria-label="Columns"></nav>
       <button id="add-column-trigger" class="workspace-rail-button" type="button" aria-label="Add column" aria-expanded="false" aria-controls="add-column-form">
@@ -19,6 +19,9 @@
       </button>
       <button id="layout-columns-button" class="workspace-rail-button" type="button" aria-label="Show all columns at once" aria-pressed="false">
         <i class="ri-layout-vertical-line" aria-hidden="true"></i>
+      </button>
+      <button id="scroll-sync-button" class="workspace-rail-button" type="button" aria-label="Enable synchronized vertical scrolling" aria-pressed="false">
+        <i id="scroll-sync-icon" class="ri-lock-unlock-line" aria-hidden="true"></i>
       </button>
       <div class="workspace-column-actions" aria-label="Current column actions">
         <button id="expand-column-button" class="workspace-rail-button" type="button" aria-label="Expand current column">
@@ -70,7 +73,7 @@
           <button class="add-column-button" type="submit"><i class="ri-add-line" aria-hidden="true"></i><span>Add Column</span></button>
           <p id="form-error" class="form-error" role="alert" aria-live="polite"></p>
         </div>
-        <img class="add-card-brand" src="View X logo.svg" alt="">
+        <span class="add-card-brand" aria-hidden="true"></span>
       </form>
     </main>
   </div>

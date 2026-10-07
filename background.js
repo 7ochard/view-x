@@ -16,7 +16,7 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 // Update notification remains intentionally separate from the X adapter.
-const GITHUB_RELEASES_URL = 'https://api.github.com/repos/ngalatis/TweetdeckX/releases/latest';
+const GITHUB_RELEASES_URL = 'https://api.github.com/repos/7ochard/view-x/releases/latest';
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 
 function compareVersions(current, candidate) {

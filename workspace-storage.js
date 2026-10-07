@@ -5,7 +5,7 @@
 
   const STORAGE_KEY = 'viewx_workspace_v1';
   const LEGACY_STATE_KEY = 'tweetdeckx_state';
-  const DEFAULT_WORKSPACE_VERSION = 2;
+  const DEFAULT_WORKSPACE_VERSION = 3;
   const MIN_COLUMN_WIDTH = 480;
   const MAX_COLUMN_WIDTH = 600;
   const DEFAULT_COLUMN_WIDTH = 480;
@@ -76,11 +76,12 @@
     const savedSettings = (workspace && workspace.settings) || {};
     const savedLayoutColumns = Number(savedSettings.layoutColumns);
     return {
-      version: Number(workspace && workspace.version) >= DEFAULT_WORKSPACE_VERSION ? DEFAULT_WORKSPACE_VERSION : 1,
+      version: Math.max(1, Math.min(DEFAULT_WORKSPACE_VERSION, Number(workspace && workspace.version) || 1)),
       settings: {
         theme: savedSettings.theme === 'light' ? 'light' : 'dark',
         accent: VALID_ACCENTS.has(savedSettings.accent) ? savedSettings.accent : 'light',
         layoutColumns: Number.isInteger(savedLayoutColumns) && savedLayoutColumns >= 2 ? savedLayoutColumns : null,
+        syncScroll: Boolean(savedSettings.syncScroll),
         hideAds: savedSettings.hideAds !== false,
         hideColumnHeader: Boolean(savedSettings.hideColumnHeader),
       },

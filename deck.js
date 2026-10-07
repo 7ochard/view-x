@@ -1,5 +1,3 @@
-import autoAnimate from './auto-animate.mjs';
-
 // Deck owns the horizontal canvas, ordering, and the single global action rail.
 // Columns stay content-only; XAdapter owns all X-specific behavior.
 (function () {
@@ -10,20 +8,29 @@ import autoAnimate from './auto-animate.mjs';
     { url: 'https://x.com/home', preset: 'home' },
     { url: 'https://x.com/home', preset: 'following' },
     { url: 'https://x.com/home', preset: 'topic:0' },
-    { url: 'https://x.com/home', preset: 'topic:1' },
     // Replaced with the signed-in account's likes URL once X reports it.
     { url: 'https://x.com/home', preset: 'likes' },
+    { url: 'https://x.com/explore', preset: null },
   ];
   const DEFAULT_VISIBLE_COLUMN_COUNT = 5;
 
   function seedInitialWorkspace(workspace, storage) {
+    const oldPresets = ['home', 'following', 'topic:0', 'topic:1', 'likes'];
+    if (workspace.version < 3 && workspace.columns.length === oldPresets.length
+      && workspace.columns.every((column, index) => column.preset === oldPresets[index]
+        && (column.preset === 'likes' || column.sourceUrl === 'https://x.com/home'))) {
+      workspace.columns.splice(3, 1);
+      workspace.columns.push(storage.createColumn('https://x.com/explore'));
+      workspace.version = 3;
+      return true;
+    }
     const needsDefaultColumns = workspace.columns.length === 0 && (
       !workspace.initialized || workspace.version < 2
     );
     if (!needsDefaultColumns) return false;
     workspace.columns = DEFAULT_COLUMNS.map((definition) => storage.createColumn(definition.url, definition.preset));
     workspace.initialized = true;
-    workspace.version = 2;
+    workspace.version = 3;
     return true;
   }
 
@@ -35,7 +42,6 @@ import autoAnimate from './auto-animate.mjs';
       this.columns = new Map();
       this.selectedColumnId = null;
       this.draggedColumnId = null;
-      this.selectorClickTimer = null;
       this.writeQueue = Promise.resolve();
       this.toastTimer = null;
       this.onViewportResize = () => this.applyColumnLayout();
@@ -47,6 +53,8 @@ import autoAnimate from './auto-animate.mjs';
       this.addTrigger = document.getElementById('add-column-trigger');
       this.addTriggerIcon = this.addTrigger.querySelector('i');
       this.layoutButton = document.getElementById('layout-columns-button');
+      this.scrollSyncButton = document.getElementById('scroll-sync-button');
+      this.scrollSyncIcon = document.getElementById('scroll-sync-icon');
       this.addForm = document.getElementById('add-column-form');
       this.addCard = this.addForm;
       this.urlInput = document.getElementById('column-url');
@@ -69,16 +77,13 @@ import autoAnimate from './auto-animate.mjs';
     mount() {
       this.applyTheme();
       this.updatePreferenceControls();
-      this.columnMotion = autoAnimate(this.container, {
-        duration: 160,
-        easing: 'cubic-bezier(.2, .8, .2, 1)',
-      });
       this.applyColumnLayout();
       this.updateAddTrigger(false);
       window.addEventListener('resize', this.onViewportResize);
 
       this.addTrigger.addEventListener('click', () => this.toggleAddForm());
       this.layoutButton.addEventListener('click', () => this.cycleColumnLayout());
+      this.scrollSyncButton.addEventListener('click', () => this.toggleScrollSync());
       this.addForm.addEventListener('submit', (event) => this.addColumnFromForm(event));
       this.urlInput.addEventListener('input', () => this.clearFormError());
       this.settingsButton.addEventListener('click', () => this.toggleSettings());
@@ -153,6 +158,12 @@ import autoAnimate from './auto-animate.mjs';
       this.appearanceIcon.className = this.workspace.settings.theme === 'light' ? 'ri-sun-line' : 'ri-moon-line';
       this.hideAdsButton.setAttribute('aria-pressed', String(Boolean(this.workspace.settings.hideAds)));
       this.hideColumnHeaderButton.setAttribute('aria-pressed', String(Boolean(this.workspace.settings.hideColumnHeader)));
+      const isScrollSyncEnabled = Boolean(this.workspace.settings.syncScroll);
+      this.scrollSyncButton.setAttribute('aria-pressed', String(isScrollSyncEnabled));
+      this.scrollSyncButton.setAttribute('aria-label', isScrollSyncEnabled
+        ? 'Disable synchronized vertical scrolling'
+        : 'Enable synchronized vertical scrolling');
+      this.scrollSyncIcon.className = isScrollSyncEnabled ? 'ri-lock-line' : 'ri-lock-unlock-line';
       this.accentButtons.forEach((button) => {
         button.setAttribute('aria-pressed', String(button.dataset.accent === this.workspace.settings.accent));
       });
@@ -191,7 +202,7 @@ import autoAnimate from './auto-animate.mjs';
       this.container.classList.toggle('is-responsive-layout', total > 0 || hasAddCard);
       this.container.classList.toggle('is-add-card-open', hasAddCard);
       this.workspace.columns.forEach((model, index) => {
-        this.columns.get(model.id)?.element.classList.toggle('is-layout-hidden', index >= visible);
+        this.columns.get(model.id)?.setVisible(index < visible);
       });
       const selectedIndex = this.workspace.columns.findIndex((model) => model.id === this.selectedColumnId);
       if (selectedIndex >= visible) this.selectColumn(null);
@@ -216,6 +227,9 @@ import autoAnimate from './auto-animate.mjs';
         this.workspace.settings.layoutColumns = selected + 1;
       }
       this.applyColumnLayout();
+      this.columns.forEach((column) => {
+        if (column.visible) column.playTransition();
+      });
       this.persist();
     }
 
@@ -300,10 +314,26 @@ import autoAnimate from './auto-animate.mjs';
     }
 
     selectColumn(columnId, { reveal = false } = {}) {
+      const previous = this.getSelectedColumn();
       this.selectedColumnId = columnId && this.columns.has(columnId) ? columnId : null;
+      const selected = this.getSelectedColumn();
+      if (reveal && selected) {
+        const index = this.workspace.columns.findIndex((model) => model.id === columnId);
+        if (index >= this.getVisibleColumnCount()) {
+          this.workspace.settings.layoutColumns = index + 1;
+          this.applyColumnLayout();
+        }
+        const expanded = Array.from(this.columns.values()).find((column) => column.element.classList.contains('is-expanded'));
+        if (expanded && expanded !== selected) {
+          expanded.toggleExpand(false);
+          selected.toggleExpand(true);
+        } else if (previous !== selected) selected.playTransition();
+        selected.ensureLoaded();
+        this.adapter.activate(columnId);
+      }
       this.syncSelectionUI();
-      if (reveal && this.getSelectedColumn()) {
-        this.getSelectedColumn().element.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      if (reveal && selected) {
+        selected.element.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'nearest', inline: 'nearest' });
       }
     }
 
@@ -325,26 +355,23 @@ import autoAnimate from './auto-animate.mjs';
       this.selectColumn(columnId);
     }
 
+    toggleScrollSync() {
+      this.workspace.settings.syncScroll = !this.workspace.settings.syncScroll;
+      this.adapter.updateSettings(this.workspace.settings);
+      this.applyColumnLayout();
+      this.updatePreferenceControls();
+      this.persist();
+    }
+
     queueSelectorClick(event, columnId) {
       event.preventDefault();
-      this.cancelSelectorClick();
-      this.selectorClickTimer = window.setTimeout(() => {
-        this.selectorClickTimer = null;
-        if (!this.draggedColumnId) this.selectColumn(columnId, { reveal: true });
-      }, 200);
+      if (!this.draggedColumnId && event.detail < 2) this.selectColumn(columnId, { reveal: true });
     }
 
     deleteFromSelector(event, columnId) {
       event.preventDefault();
       event.stopPropagation();
-      this.cancelSelectorClick();
       this.removeColumn(columnId);
-    }
-
-    cancelSelectorClick() {
-      if (this.selectorClickTimer === null) return;
-      window.clearTimeout(this.selectorClickTimer);
-      this.selectorClickTimer = null;
     }
 
     handleNavigate(columnId, url) {
@@ -398,7 +425,6 @@ import autoAnimate from './auto-animate.mjs';
     }
 
     startDrag(event, columnId) {
-      this.cancelSelectorClick();
       this.draggedColumnId = columnId;
       this.columns.get(columnId)?.element.classList.add('is-dragging');
       event.currentTarget.classList.add('is-dragging');

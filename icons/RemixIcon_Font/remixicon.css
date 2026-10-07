@@ -62,3 +62,5 @@
 .ri-add-large-line:before { content: "\f4b1"; }
 .ri-twitter-x-line:before { content: "\f3e6"; }
 .ri-arrow-turn-forward-line:before { content: "\f2e9"; }
+.ri-lock-line:before { content: "\eece"; }
+.ri-lock-unlock-line:before { content: "\eed2"; }

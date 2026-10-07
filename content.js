@@ -32,6 +32,199 @@
   let isTweetDeckX = false;
   let reportedAccountHandle = null;
   let reportedAvatarUrl = null;
+  let scrollSyncEnabled = false;
+  let verticalScroller = null;
+  let scrollSourceActive = false;
+  let pointerScrollGesture = false;
+  let scrollSourceFrame = 0;
+  let scrollEndTimer = null;
+  let pendingRemoteDelta = 0;
+  let remoteScrollFrame = 0;
+  let intendedScrollTop = null;
+  let suppressActivityUntil = 0;
+  let scrollReadyReported = false;
+  let scrollReadyTimer = null;
+  const SCROLL_END_FALLBACK_MS = 260;
+
+  function isVerticalScroller(element) {
+    if (!element || typeof element.scrollTop !== 'number') return false;
+    if (element === document.scrollingElement) return true;
+    if (!element.isConnected) return false;
+    const overflowY = window.getComputedStyle(element).overflowY;
+    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+  }
+
+  function findScrollableAncestor(element) {
+    let fallback = null;
+    for (let current = element; current && current !== document.documentElement; current = current.parentElement) {
+      if (!isVerticalScroller(current)) continue;
+      if (!fallback) fallback = current;
+      if (current.scrollHeight > current.clientHeight + 1) return current;
+    }
+    return fallback;
+  }
+
+  function findVerticalScroller() {
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    const primaryScroller = primaryColumn && findScrollableAncestor(primaryColumn);
+    if (primaryScroller) {
+      verticalScroller = primaryScroller;
+      return verticalScroller;
+    }
+    if (isVerticalScroller(verticalScroller)) return verticalScroller;
+    const documentScroller = document.scrollingElement;
+    verticalScroller = isVerticalScroller(documentScroller) ? documentScroller : null;
+    return verticalScroller;
+  }
+
+  function isTimelineTarget(target) {
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    if (!primaryColumn || !target || typeof target.contains !== 'function') return false;
+    return primaryColumn.contains(target) || target.contains(primaryColumn);
+  }
+
+  function isCurrentScrollerEvent(event, scroller) {
+    if (!scroller) return false;
+    if (event.target === scroller) return true;
+    return scroller === document.scrollingElement && event.target === document;
+  }
+
+  function resetScrollReadiness() {
+    if (!isTweetDeckX) return;
+    window.clearTimeout(scrollReadyTimer);
+    scrollReadyTimer = null;
+    scrollReadyReported = false;
+    verticalScroller = null;
+    postToDeck('tweetdeckx-scroll-not-ready');
+    window.setTimeout(announceScrollReadyWhenAvailable, 100);
+  }
+
+  function postToDeck(type, payload) {
+    try { window.parent.postMessage(Object.assign({ type }, payload), '*'); } catch (err) {}
+  }
+
+  function currentScrollTop() {
+    const scroller = findVerticalScroller();
+    return scroller ? Math.max(0, scroller.scrollTop) : 0;
+  }
+
+  function announceScrollReadyWhenAvailable() {
+    if (scrollReadyReported || !isTweetDeckX) return;
+    let attempts = 0;
+    const announce = () => {
+      if (scrollReadyReported || !isTweetDeckX) return;
+      const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+      const scroller = primaryColumn && findVerticalScroller();
+      if (primaryColumn && scroller && scroller.clientHeight > 0) {
+        scrollReadyReported = true;
+        postToDeck('tweetdeckx-scroll-ready');
+        return;
+      }
+      attempts += 1;
+      if (attempts < 30) scrollReadyTimer = window.setTimeout(announce, 250);
+    };
+    window.clearTimeout(scrollReadyTimer);
+    announce();
+  }
+
+  function claimScrollSource() {
+    if (!isTweetDeckX || !scrollSyncEnabled || scrollSourceActive) return;
+    scrollSourceActive = true;
+    intendedScrollTop = null;
+    suppressActivityUntil = 0;
+    postToDeck('tweetdeckx-scroll-source', { top: currentScrollTop() });
+    scheduleSourceEnd();
+  }
+
+  function reportSourcePosition() {
+    if (!scrollSourceActive || !scrollSyncEnabled) return;
+    postToDeck('tweetdeckx-column-scroll', { top: currentScrollTop() });
+  }
+
+  function flushSourcePosition() {
+    if (scrollSourceFrame) {
+      window.cancelAnimationFrame(scrollSourceFrame);
+      scrollSourceFrame = 0;
+    }
+    reportSourcePosition();
+  }
+
+  function finishScrollSource() {
+    if (!scrollSourceActive) return;
+    window.clearTimeout(scrollEndTimer);
+    scrollEndTimer = null;
+    flushSourcePosition();
+    postToDeck('tweetdeckx-scroll-source-end');
+    scrollSourceActive = false;
+  }
+
+  function scheduleSourceEnd() {
+    window.clearTimeout(scrollEndTimer);
+    scrollEndTimer = window.setTimeout(finishScrollSource, SCROLL_END_FALLBACK_MS);
+  }
+
+  function noteDirectScrollIntent(event) {
+    if (event && !isTimelineTarget(event.target)) return;
+    claimScrollSource();
+    if (scrollSourceActive) scheduleSourceEnd();
+  }
+
+  function isScrollKey(event) {
+    return ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key);
+  }
+
+  function applyRemoteScrollDelta(rawDelta) {
+    const delta = Number(rawDelta);
+    if (!scrollSyncEnabled || !Number.isFinite(delta) || Math.abs(delta) < 0.5) return;
+    pendingRemoteDelta += delta;
+    if (remoteScrollFrame) return;
+    remoteScrollFrame = window.requestAnimationFrame(() => {
+      remoteScrollFrame = 0;
+      const combinedDelta = pendingRemoteDelta;
+      pendingRemoteDelta = 0;
+      const scroller = findVerticalScroller();
+      if (!scroller || Math.abs(combinedDelta) < 0.5) return;
+      const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const target = Math.max(0, Math.min(maximum, scroller.scrollTop + combinedDelta));
+      if (Math.abs(target - scroller.scrollTop) < 0.5) return;
+      intendedScrollTop = target;
+      suppressActivityUntil = Date.now() + 250;
+      scroller.scrollTop = target;
+    });
+  }
+
+  document.addEventListener('wheel', noteDirectScrollIntent, { passive: true, capture: true });
+  document.addEventListener('touchmove', noteDirectScrollIntent, { passive: true, capture: true });
+  document.addEventListener('keydown', (event) => {
+    if (isScrollKey(event)) noteDirectScrollIntent();
+  }, { capture: true });
+  document.addEventListener('pointerdown', (event) => {
+    pointerScrollGesture = Boolean(event.isPrimary && event.button === 0 && isTimelineTarget(event.target));
+  }, { passive: true, capture: true });
+  document.addEventListener('pointerup', () => { pointerScrollGesture = false; }, { passive: true, capture: true });
+  document.addEventListener('pointercancel', () => { pointerScrollGesture = false; }, { passive: true, capture: true });
+
+  document.addEventListener('scroll', (event) => {
+    if (!isTweetDeckX || !scrollSyncEnabled) return;
+    const scroller = findVerticalScroller();
+    if (!isCurrentScrollerEvent(event, scroller)) return;
+    if (intendedScrollTop !== null && scroller && Math.abs(scroller.scrollTop - intendedScrollTop) <= 2) {
+      intendedScrollTop = null;
+      return;
+    }
+    if (!scrollSourceActive && pointerScrollGesture) claimScrollSource();
+    if (!scrollSourceActive) return;
+    if (!scrollSourceFrame) {
+      scrollSourceFrame = window.requestAnimationFrame(() => {
+        scrollSourceFrame = 0;
+        reportSourcePosition();
+      });
+    }
+    scheduleSourceEnd();
+  }, { passive: true, capture: true });
+  document.addEventListener('scrollend', (event) => {
+    if (isCurrentScrollerEvent(event, findVerticalScroller())) finishScrollSource();
+  }, { passive: true, capture: true });
 
   window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'tweetdeckx-init') {
@@ -39,6 +232,8 @@
       applyCompactStyles();
       applyHideAds(e.data.hideAds);
       applyHideColumnHeader(e.data.hideColumnHeader);
+      scrollSyncEnabled = Boolean(e.data.syncScroll);
+      announceScrollReadyWhenAvailable();
       applyTimelinePreset(e.data.timelinePreset);
       reportAccountHandleWhenReady();
     }
@@ -54,8 +249,19 @@
     if (e.data && e.data.type === 'tweetdeckx-set-hide-column-header') {
       applyHideColumnHeader(e.data.enabled);
     }
+    if (e.data && e.data.type === 'tweetdeckx-set-scroll-sync') {
+      scrollSyncEnabled = Boolean(e.data.enabled);
+      if (!scrollSyncEnabled) {
+        finishScrollSource();
+        pendingRemoteDelta = 0;
+        intendedScrollTop = null;
+      }
+    }
+    if (e.data && e.data.type === 'tweetdeckx-apply-scroll-delta') {
+      applyRemoteScrollDelta(e.data.delta);
+    }
     // Forward user activity (scroll/click/keydown) so deck keeps the column active
-    if (e.data && e.data.type === 'tweetdeckx-user-activity') {
+    if (e.data && e.data.type === 'tweetdeckx-user-activity' && Date.now() >= suppressActivityUntil) {
       try { window.parent.postMessage(e.data, '*'); } catch (err) {}
     }
     // Forward trusted X-frame clicks separately from background activity. The deck
@@ -65,6 +271,7 @@
     }
     // Forward iframe URL changes to the parent deck
     if (e.data && e.data.type === 'tweetdeckx-url-changed') {
+      resetScrollReadiness();
       try { window.parent.postMessage(e.data, '*'); } catch (err) {}
     }
     // Forward lightbox open/close to deck page so it can expand the iframe

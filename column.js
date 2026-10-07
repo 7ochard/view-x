@@ -11,6 +11,9 @@
       this.element = null;
       this.resizeState = null;
       this.refreshTimer = null;
+      this.frame = null;
+      this.visible = false;
+      this.transition = null;
       this.onKeyDown = this.handleKeyDown.bind(this);
     }
 
@@ -43,23 +46,55 @@
       collapseButton.setAttribute('aria-label', 'Return to workspace');
       collapseButton.innerHTML = '<i class="ri-arrow-turn-forward-line" aria-hidden="true"></i>';
       collapseButton.addEventListener('click', () => this.toggleExpand(false));
-      element.appendChild(collapseButton);
+      frameSurface.appendChild(collapseButton);
 
       this.element = element;
       this.applyWidth(this.model.width, false);
       parent.appendChild(element);
 
-      const frame = this.adapter.createFrame(this.model);
-      frame.addEventListener('load', () => loading.remove(), { once: true });
-      frameSurface.appendChild(frame);
-
-      this.refreshTimer = window.setInterval(() => this.adapter.burst(this.model.id), 300_000);
+      this.frameSurface = frameSurface;
+      this.loading = loading;
       document.addEventListener('keydown', this.onKeyDown);
       return element;
     }
 
+    setVisible(visible) {
+      const changed = this.visible !== visible;
+      this.visible = visible;
+      this.element.classList.toggle('is-layout-hidden', !visible);
+      if (!visible && this.element.classList.contains('is-expanded')) this.toggleExpand(false);
+      if (visible || this.adapter.settings.syncScroll) this.ensureLoaded();
+      if (visible && changed) this.playTransition();
+    }
+
+    ensureLoaded() {
+      if (this.frame || !this.element) return;
+      // Resolve Likes directly instead of loading a throwaway Home timeline.
+      if (this.model.preset === 'likes' && !this.model.accountHandle) {
+        this.loading.textContent = 'Waiting for X account';
+        return;
+      }
+      this.loading.textContent = 'Loading X';
+      this.frame = this.adapter.createFrame(this.model);
+      this.frame.addEventListener('load', () => this.loading.remove(), { once: true });
+      this.frameSurface.appendChild(this.frame);
+      this.refreshTimer = window.setInterval(() => {
+        if (this.visible || this.adapter.settings.syncScroll) this.adapter.burst(this.model.id);
+      }, 300_000);
+    }
+
+    playTransition() {
+      this.transition?.cancel();
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      this.transition = this.frameSurface.animate(
+        [{ opacity: .65, translate: '0 6px' }, { opacity: 1, translate: '0 0' }],
+        { duration: 140, easing: 'cubic-bezier(.2, .8, .2, 1)' }
+      );
+    }
+
     refresh() {
-      this.adapter.refresh(this.model.id, this.model.lastUrl);
+      if (this.frame) this.adapter.refresh(this.model.id, this.model.lastUrl);
+      else if (this.visible || this.adapter.settings.syncScroll) this.ensureLoaded();
     }
 
     setLastUrl(url) {
@@ -133,6 +168,7 @@
     toggleExpand(force) {
       if (!this.element) return;
       const shouldExpand = typeof force === 'boolean' ? force : !this.element.classList.contains('is-expanded');
+      if (shouldExpand === this.element.classList.contains('is-expanded')) return;
       if (shouldExpand) {
         document.querySelectorAll('.workspace-column.is-expanded').forEach((column) => {
           if (column !== this.element) column.classList.remove('is-expanded');
@@ -140,6 +176,11 @@
       }
       this.element.classList.toggle('is-expanded', shouldExpand);
       document.body.classList.toggle('workspace-has-expanded', shouldExpand);
+      if (shouldExpand) {
+        this.ensureLoaded();
+        this.adapter.activate(this.model.id);
+      }
+      this.playTransition();
     }
 
     handleKeyDown(event) {
@@ -150,6 +191,7 @@
 
     destroy() {
       window.clearInterval(this.refreshTimer);
+      this.transition?.cancel();
       document.removeEventListener('keydown', this.onKeyDown);
       if (this.element && this.element.classList.contains('is-expanded')) {
         document.body.classList.remove('workspace-has-expanded');
